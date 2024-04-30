@@ -106,6 +106,7 @@ def parse_args():
 
 
 def main():
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3,4,6,7,8,9'
     args = parse_args()
 
     cfg = Config.fromfile(args.config)
