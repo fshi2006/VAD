@@ -22,11 +22,13 @@ pip install torch==1.9.1+cu111 torchvision==0.10.1+cu111 torchaudio==0.9.1 -f ht
 ```shell
 conda install -c omgarcia gcc-5 # gcc-6.2
 ```
+pip install yapf==0.40.1
+pip install setuptools==59.5.0
 
 **c. Install mmcv-full.**
 ```shell
-pip install mmcv-full==1.4.0
-#  pip install mmcv-full==1.4.0 -f https://download.openmmlab.com/mmcv/dist/cu111/torch1.9.0/index.html
+#  pip install mmcv-full==1.4.0
+pip install mmcv-full==1.4.0 -f https://download.openmmlab.com/mmcv/dist/cu111/torch1.9.0/index.html
 ```
 
 **d. Install mmdet and mmseg.**

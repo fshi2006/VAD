@@ -437,4 +437,5 @@ log_config = dict(
 checkpoint_config = dict(interval=1, max_keep_ckpts=total_epochs)
 
 
-custom_hooks = [dict(type='CustomSetEpochInfoHook')]
+custom_hooks = [dict(type='CustomSetEpochInfoHook'),
+                dict(type='IterProgressBarLoggerHook') ]

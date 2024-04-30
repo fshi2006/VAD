@@ -1,7 +1,8 @@
 from mmcv.runner.hooks.hook import HOOKS, Hook
 from projects.mmdet3d_plugin.models.utils import run_time
 from mmcv.parallel import is_module_wrapper
-
+from tqdm import tqdm
+import os.path as osp
 
 @HOOKS.register_module()
 class TransferWeight(Hook):
@@ -23,4 +24,19 @@ class CustomSetEpochInfoHook(Hook):
         if is_module_wrapper(model):
             model = model.module
         model.set_epoch(epoch)
+
+
+@HOOKS.register_module()
+class IterProgressBarLoggerHook(Hook):
+    def __init__(self):
+        super().__init__()
+
+    def before_train_epoch(self, runner):
+        self.pbar = tqdm(total=len(runner.data_loader))
+
+    def after_train_iter(self, runner):
+        self.pbar.update(1)
+
+    def after_train_epoch(self, runner):
+        self.pbar.close()
 
