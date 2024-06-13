@@ -34,7 +34,7 @@ cv2.setNumThreads(1)
 
 import sys
 sys.path.append('')
-
+warnings.filterwarnings("ignore", category=RuntimeWarning, message="invalid value encountered in intersection")
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a detector')
@@ -264,4 +264,5 @@ def main():
 
 
 if __name__ == '__main__':
+    torch.multiprocessing.set_start_method('fork')
     main()

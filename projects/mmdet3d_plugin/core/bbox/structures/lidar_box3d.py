@@ -3,7 +3,7 @@ import numpy as np
 import torch
 
 from mmdet3d.core.points import BasePoints
-from mmdet3d.ops.roiaware_pool3d import points_in_boxes_gpu
+# from mmdet3d.ops.roiaware_pool3d import points_in_boxes_gpu
 from mmdet3d.core.bbox.structures.base_box3d import BaseInstance3DBoxes
 from mmdet3d.core.bbox.structures.utils import limit_period, rotation_3d_in_axis
 
@@ -264,16 +264,16 @@ class CustomLiDARInstance3DBoxes(BaseInstance3DBoxes):
         enlarged_boxes[:, 2] -= extra_width
         return self.new_box(enlarged_boxes)
 
-    def points_in_boxes(self, points):
-        """Find the box which the points are in.
+    # def points_in_boxes(self, points):
+    #     """Find the box which the points are in.
 
-        Args:
-            points (torch.Tensor): Points in shape (N, 3).
+    #     Args:
+    #         points (torch.Tensor): Points in shape (N, 3).
 
-        Returns:
-            torch.Tensor: The index of box where each point are in.
-        """
-        box_idx = points_in_boxes_gpu(
-            points.unsqueeze(0),
-            self.tensor.unsqueeze(0).to(points.device)).squeeze(0)
-        return box_idx
+    #     Returns:
+    #         torch.Tensor: The index of box where each point are in.
+    #     """
+    #     box_idx = points_in_boxes_gpu(
+    #         points.unsqueeze(0),
+    #         self.tensor.unsqueeze(0).to(points.device)).squeeze(0)
+    #     return box_idx

@@ -1,10 +1,15 @@
 import numpy as np
 from numpy import random
+import torch
 import mmcv
 from mmdet.datasets.builder import PIPELINES
 from mmcv.parallel import DataContainer as DC
 from mmdet3d.core.bbox import (CameraInstance3DBoxes, DepthInstance3DBoxes,
                                LiDARInstance3DBoxes, box_np_ops)
+from shapely.geometry import LineString
+from random import uniform
+from projects.mmdet3d_plugin.datasets.nuscenes_vad_dataset import LiDARInstanceLines
+from mmdet.datasets.pipelines import to_tensor
 
 
 @PIPELINES.register_module()
@@ -380,6 +385,149 @@ class CustomCollect3D(object):
             f'(keys={self.keys}, meta_keys={self.meta_keys})'
 
 
+@PIPELINES.register_module()
+class PlusCollect3D(object):
+    """Collect data from the loader relevant to the specific task.
+
+    This is usually the last stage of the data loader pipeline. Typically keys
+    is set to some subset of "img", "proposals", "gt_bboxes",
+    "gt_bboxes_ignore", "gt_labels", and/or "gt_masks".
+
+    The "img_meta" item is always populated.  The contents of the "img_meta"
+    dictionary depends on "meta_keys". By default this includes:
+
+        - 'img_shape': shape of the image input to the network as a tuple
+            (h, w, c).  Note that images may be zero padded on the
+            bottom/right if the batch tensor is larger than this shape.
+        - 'scale_factor': a float indicating the preprocessing scale
+        - 'flip': a boolean indicating if image flip transform was used
+        - 'filename': path to the image file
+        - 'ori_shape': original shape of the image as a tuple (h, w, c)
+        - 'pad_shape': image shape after padding
+        - 'lidar2img': transform from lidar to image
+        - 'depth2img': transform from depth to image
+        - 'cam2img': transform from camera to image
+        - 'pcd_horizontal_flip': a boolean indicating if point cloud is
+            flipped horizontally
+        - 'pcd_vertical_flip': a boolean indicating if point cloud is
+            flipped vertically
+        - 'box_mode_3d': 3D box mode
+        - 'box_type_3d': 3D box type
+        - 'img_norm_cfg': a dict of normalization information:
+            - mean: per channel mean subtraction
+            - std: per channel std divisor
+            - to_rgb: bool indicating if bgr was converted to rgb
+        - 'pcd_trans': point cloud transformations
+        - 'sample_idx': sample index
+        - 'pcd_scale_factor': point cloud scale factor
+        - 'pcd_rotation': rotation applied to point cloud
+        - 'pts_filename': path to point cloud file.
+
+    Args:
+        keys (Sequence[str]): Keys of results to be collected in ``data``.
+        meta_keys (Sequence[str], optional): Meta keys to be converted to
+            ``mmcv.DataContainer`` and collected in ``data[img_metas]``.
+            Default: ('filename', 'ori_shape', 'img_shape', 'lidar2img',
+            'depth2img', 'cam2img', 'pad_shape', 'scale_factor', 'flip',
+            'pcd_horizontal_flip', 'pcd_vertical_flip', 'box_mode_3d',
+            'box_type_3d', 'img_norm_cfg', 'pcd_trans',
+            'sample_idx', 'pcd_scale_factor', 'pcd_rotation', 'pts_filename')
+    """
+
+    def __init__(
+            self,
+            keys,
+            meta_keys=('filename', 'ori_shape', 'img_shape', 'lidar2img', 
+                       'lidar2camera', 'camera_intrinsics', 'img_feature', 'side_img_feature', 'img_feature_shape',
+                       'depth2img', 'cam2img', 'pad_shape', 'scale_factor', 'flip',
+                       'pcd_horizontal_flip', 'pcd_vertical_flip', 'box_mode_3d',
+                       'box_type_3d', 'img_norm_cfg', 'pcd_trans', 'sample_idx',
+                       'prev_idx', 'next_idx', 'scene_token', 'can_bus', 'prev_bev'
+                       'pcd_scale_factor', 'pcd_rotation', 'pcd_rotation_angle',
+                       'pts_filename', 'transformation_3d_flow', 'trans_mat',
+                       'affine_aug', 'curr', 'raw_img', 'canvas')):
+        self.keys = keys
+        self.meta_keys = meta_keys
+
+    def __call__(self, results):
+        """Call function to collect keys in results. The keys in ``meta_keys``
+        will be converted to :obj:`mmcv.DataContainer`.
+
+        Args:
+            results (dict): Result dict contains the data to collect.
+
+        Returns:
+            dict: The result dict contains the following keys
+                - keys in ``self.keys``
+                - ``img_metas``
+        """
+        data = {}
+        img_metas = {}
+        for key in self.meta_keys:
+            if key in results:
+                img_metas[key] = results[key]
+
+        img_metas['can_bus'] = np.zeros(18)
+        # img_metas['can_bus'] = (data['img_inputs'][0].shape[3], data['img_inputs'][0].shape[4], 3)
+        img_metas['img_shape'] = [
+                                    (results['img_inputs'][0].shape[2], results['img_inputs'][0].shape[3], 3)
+                                ] * 6
+        data['img_metas'] = DC(img_metas, cpu_only=True)
+        for key in self.keys:
+            if key in results:
+                data[key] = results[key]
+        
+        data_use = {}
+        metas_map = {}
+        metas_map[0] = data['img_metas'].data
+        metas_map[1] = data['img_metas'].data
+        metas_map[2] = data['img_metas'].data
+        data_use['img_metas'] = DC(metas_map, cpu_only=True)
+        data_use['gt_bboxes_3d'] = data['gt_bboxes_3d']
+        data_use['gt_labels_3d'] = data['gt_labels_3d']
+        # data_use['img'] = DC(data['img_inputs'][0].tile((3, 1, 1)))
+        data_use['img'] = DC(torch.stack([data['img_inputs'][0],data['img_inputs'][0],data['img_inputs'][0]]),
+                              cpu_only=False, stack=True)
+        
+        obs_num = data_use['gt_labels_3d'].data.shape[0]
+        # data_use['ego_his_trajs'] = DC(to_tensor(torch.zeros(2, 2)[None, ...]), stack=True)
+        # data_use['ego_fut_trajs'] = DC(to_tensor(torch.zeros(6, 2)[None, ...]), stack=True)
+        # data_use['ego_fut_masks'] = DC(to_tensor(torch.zeros(6)[None, None, ...]), stack=True)
+        # data_use['ego_fut_cmd'] = DC(to_tensor(torch.zeros(3)[None, None,...]), stack=True)
+        # data_use['ego_lcf_feat'] = DC(to_tensor(torch.zeros(9)[None, None,...]), stack=True)
+        # data_use['gt_attr_labels'] = DC(to_tensor(torch.zeros(obs_num, 34)), stack=False)
+
+        data_use['ego_his_trajs'] = DC(torch.rand(1, 2, 2) * 10, stack=True)
+        data_use['ego_fut_trajs'] = DC(torch.rand(1, 6, 2) * 10, stack=True)
+        data_use['ego_fut_masks'] = DC(to_tensor(torch.ones(6, dtype=torch.float32)[None, None, ...]), stack=True)
+        data_use['ego_fut_cmd'] = DC(to_tensor(torch.tensor([0.0, 0.0, 1.0], dtype=torch.float32)[None, None,...]), stack=True)
+        data_use['ego_lcf_feat'] = DC(torch.rand(1, 1, 9) * 10, stack=True)
+        data_use['gt_attr_labels'] = DC(torch.rand(obs_num, 34) * 10, stack=False)
+        
+  
+        data_use['map_gt_labels_3d'] = DC(torch.zeros(2, dtype=torch.long), cpu_only=False)
+        # lines = []
+        # patch_size = (100, 100)
+        # for _ in range(4):
+        #     x1, y1 = uniform(-patch_size[1]/2, patch_size[1]/2), uniform(-patch_size[0]/2, patch_size[0]/2)
+        #     x2, y2 = uniform(-patch_size[1]/2, patch_size[1]/2), uniform(-patch_size[0]/2, patch_size[0]/2)
+        #     line = LineString([(x1, y1), (x2, y2)])
+        #     lines.append(line)
+        # lidar_instance = LiDARInstanceLines(
+        #     instance_line_list=lines, 
+        #     patch_size=patch_size
+        # )
+        
+        gt_instance = []
+        gt_instance.append(LineString([(1.571, -30), (1.854, 19.587)]))
+        gt_instance.append(LineString([(1.922, 26.594), (1.915, 30)]))
+        
+        gt_instance = LiDARInstanceLines(gt_instance, 1, 250, False, 20, -10000, (60, 30))
+        
+        data_use['map_gt_bboxes_3d'] = DC(gt_instance, cpu_only=True)
+        
+        return data_use
+    
 
 @PIPELINES.register_module()
 class RandomScaleImageMultiViewImage(object):
