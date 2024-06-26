@@ -323,7 +323,8 @@ model = dict(
 
 dataset_type = 'VADCustomNuScenesDataset'
 plus_dataset_type = 'PlusVADKittiDataset'
-data_root = '/mnt/bigfile_2/datasets/pdb-l4e-a0002/20240123/dataset_sampled/'
+# data_root = '/mnt/bigfile_2/datasets/pdb-l4e-a0002/20240123/dataset_sampled/'
+data_root = '/home/shi.feng/plus_ws/output/dataset_sampled/'
 file_client_args = dict(backend='disk')
 
 # train_pipeline = [
@@ -381,20 +382,20 @@ train_pipeline = [
         is_plusdata=True,
         use_offline_feature=use_offline_img_feat,
         offline_feature_resize_shape=offline_feature_resize_shape),
-    dict(
-        type='LoadPointsFromFile',
-        coord_type='LIDAR',
-        load_dim=4,
-        use_dim=4,
-        point_type='float64',
-        using_tele=False,
-        file_client_args=file_client_args),
+    # dict(
+    #     type='LoadPointsFromFile',
+    #     coord_type='LIDAR',
+    #     load_dim=4,
+    #     use_dim=4,
+    #     point_type='float64',
+    #     using_tele=False,
+    #     file_client_args=file_client_args),
     dict(
         type='LoadAnnotationsBEVDepth_Plus',
         bda_aug_conf=bda_aug_conf,
         classes=class_names),
     # dict(type='PointToMultiViewDepth', downsample=1, grid_config=grid_config),
-    dict(type='PointToMultiViewDepth_Plus', downsample=1, grid_config=grid_config),
+    # dict(type='PointToMultiViewDepth_Plus', downsample=1, grid_config=grid_config),
     dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
     dict(type='ObjectNameFilter', classes=class_names),
     dict(type='DefaultFormatBundle3D', class_names=class_names),
@@ -432,11 +433,12 @@ test_pipeline = [
 
 data = dict(
     samples_per_gpu=1,
-    workers_per_gpu=4,
+    workers_per_gpu=1,
     train=dict(
         type=plus_dataset_type,
         data_root=data_root,
-        ann_file=data_root + 'NKitti_L4_lcr_data_mm3d_infos_val_8688_51049_7c.pkl',
+        # ann_file=data_root + 'NKitti_L4_lcr_data_mm3d_infos_val_8688_51049_7c.pkl',
+        ann_file=data_root + 'Kitti_L4_lcr_data_mm3d_infos_trainval_28_83_7c_2d_filtered.pkl',
         split='training',
             pts_prefix='pointcloud',
             pipeline=train_pipeline,
@@ -445,6 +447,7 @@ data = dict(
             test_mode=False,
             pcd_limit_range=point_cloud_range,
             used_cameras=6,
+            queue_length=queue_length,
             # we use box_type_3d='LiDAR' in kitti and nuscenes dataset
             # and box_type_3d='Depth' in sunrgbd and scannet dataset.
             box_type_3d='LiDAR',

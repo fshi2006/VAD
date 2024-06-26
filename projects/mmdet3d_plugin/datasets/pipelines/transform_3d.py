@@ -467,7 +467,7 @@ class PlusCollect3D(object):
             if key in results:
                 img_metas[key] = results[key]
 
-        img_metas['can_bus'] = np.zeros(18)
+        # img_metas['can_bus'] = np.zeros(18)
         # img_metas['can_bus'] = (data['img_inputs'][0].shape[3], data['img_inputs'][0].shape[4], 3)
         img_metas['img_shape'] = [
                                     (results['img_inputs'][0].shape[2], results['img_inputs'][0].shape[3], 3)
@@ -482,13 +482,14 @@ class PlusCollect3D(object):
         metas_map[0] = data['img_metas'].data
         metas_map[1] = data['img_metas'].data
         metas_map[2] = data['img_metas'].data
-        data_use['img_metas'] = DC(metas_map, cpu_only=True)
+        # data_use['img_metas'] = DC(metas_map, cpu_only=True)
+        data_use['img_metas'] = data['img_metas']
         data_use['gt_bboxes_3d'] = data['gt_bboxes_3d']
         data_use['gt_labels_3d'] = data['gt_labels_3d']
         # data_use['img'] = DC(data['img_inputs'][0].tile((3, 1, 1)))
-        data_use['img'] = DC(torch.stack([data['img_inputs'][0],data['img_inputs'][0],data['img_inputs'][0]]),
-                              cpu_only=False, stack=True)
-        
+        # data_use['img'] = DC(torch.stack([data['img_inputs'][0],data['img_inputs'][0],data['img_inputs'][0]]),
+        #                       cpu_only=False, stack=True)
+        data_use['img'] = DC(data['img_inputs'][0], cpu_only=False, stack=True)
         obs_num = data_use['gt_labels_3d'].data.shape[0]
         # data_use['ego_his_trajs'] = DC(to_tensor(torch.zeros(2, 2)[None, ...]), stack=True)
         # data_use['ego_fut_trajs'] = DC(to_tensor(torch.zeros(6, 2)[None, ...]), stack=True)
@@ -503,8 +504,6 @@ class PlusCollect3D(object):
         data_use['ego_fut_cmd'] = DC(to_tensor(torch.tensor([0.0, 0.0, 1.0], dtype=torch.float32)[None, None,...]), stack=True)
         data_use['ego_lcf_feat'] = DC(torch.rand(1, 1, 9) * 10, stack=True)
         data_use['gt_attr_labels'] = DC(torch.rand(obs_num, 34) * 10, stack=False)
-        
-  
         data_use['map_gt_labels_3d'] = DC(torch.zeros(2, dtype=torch.long), cpu_only=False)
         # lines = []
         # patch_size = (100, 100)

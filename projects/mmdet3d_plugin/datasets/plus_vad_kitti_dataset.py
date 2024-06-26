@@ -13,6 +13,8 @@ import cv2
 import mmcv
 import numpy as np
 import torch
+import random
+from mmcv.parallel import DataContainer as DC
 from mmcv.utils import print_log
 
 from mmdet3d.core import show_multi_modality_result, show_result
@@ -88,6 +90,7 @@ class PlusVADKittiDataset(KittiDataset):
                  flip_ratio_bev_horizontal=1.0,
                  data_aug_conf=None,
                  scenes_classes=[],
+                 queue_length=4,
                  **kwargs):
         super().__init__(
             data_root=data_root,
@@ -110,6 +113,7 @@ class PlusVADKittiDataset(KittiDataset):
             self.full_data_root = full_data_root
         # to load a subset, just set the load_interval in the dataset config
         self.data_infos = self.data_infos[::load_interval]
+        self.queue_length = queue_length
         
         # data_need_remove = []
         # for item in self.data_infos:
@@ -271,19 +275,110 @@ class PlusVADKittiDataset(KittiDataset):
             flip = False
             rotate = 0
         return resize, resize_dims, crop, flip, rotate
+    
+    def prepare_train_data(self, index):
+        """Training data preparation.
+
+        Args:
+            index (int): Index for accessing the target data.
+
+        Returns:
+            dict: Training data dict of the corresponding index.
+        """
+        use_prev_feature = True
+        if not use_prev_feature:
+            input_dict = self.get_data_info(index)
+            if input_dict is None:
+                return None
+            self.pre_pipeline(input_dict)
+            example = self.pipeline(input_dict)
+            if self.filter_empty_gt and \
+                    (example is None or
+                        ~(example['gt_labels_3d']._data != -1).any()):
+                return None
+            # return example
+        else:
+            data_queue = []
+            # temporal aug
+            prev_indexs_list = list(range(index-self.queue_length, index))
+            random.shuffle(prev_indexs_list)
+            prev_indexs_list = sorted(prev_indexs_list[1:], reverse=True)
+            ##
+
+            input_dict = self.get_data_info(index)
+            if input_dict is None:
+                return None
+            # frame_idx = input_dict['frame_idx']
+            # scene_token = input_dict['scene_token']
+            vehicle_name = input_dict['sample_idx'].split('_')[3]
+            timestamp = input_dict['timestamp']
+            self.pre_pipeline(input_dict)
+            example = self.pipeline(input_dict)
+            # example = self.vectormap_pipeline(example,input_dict)
+            if self.filter_empty_gt and \
+                    (example is None or ~(example['gt_labels_3d']._data != -1).any()):
+                return None
+            data_queue.insert(0, example)
+            for i in prev_indexs_list:
+                i = max(0, i)
+                input_dict = self.get_data_info(i)
+                if input_dict is None:
+                    return None
+                if input_dict['sample_idx'].split('_')[3] == vehicle_name and timestamp - input_dict['timestamp'] < 0.5 and \
+                    timestamp > input_dict['timestamp']:
+                    self.pre_pipeline(input_dict)
+                    example = self.pipeline(input_dict)
+                    # example = self.vectormap_pipeline(example,input_dict)
+                    if self.filter_empty_gt and \
+                            (example is None or ~(example['gt_labels_3d']._data != -1).any()):
+                        return None
+                    # frame_idx = input_dict['frame_idx']
+                data_queue.insert(0, copy.deepcopy(example))
+            return self.union2one(data_queue)
+    
+    def union2one(self, queue):
+        """
+        convert sample queue into one single sample.
+        """
+        imgs_list = [each['img'].data for each in queue]
+        metas_map = {}
+        prev_pos = None
+        prev_angle = None
+        for i, each in enumerate(queue):
+            metas_map[i] = each['img_metas'].data
+            if i == 0:
+                metas_map[i]['prev_bev'] = False
+                prev_pos = copy.deepcopy(metas_map[i]['can_bus'][:3])
+                prev_angle = copy.deepcopy(metas_map[i]['can_bus'][-1])
+                metas_map[i]['can_bus'][:3] = 0
+                metas_map[i]['can_bus'][-1] = 0
+            else:
+                metas_map[i]['prev_bev'] = True
+                tmp_pos = copy.deepcopy(metas_map[i]['can_bus'][:3])
+                tmp_angle = copy.deepcopy(metas_map[i]['can_bus'][-1])
+                metas_map[i]['can_bus'][:3] -= prev_pos
+                metas_map[i]['can_bus'][-1] -= prev_angle
+                prev_pos = copy.deepcopy(tmp_pos)
+                prev_angle = copy.deepcopy(tmp_angle)
+
+        queue[-1]['img'] = DC(torch.stack(imgs_list),
+                              cpu_only=False, stack=True)
+        queue[-1]['img_metas'] = DC(metas_map, cpu_only=True)
+        queue = queue[-1]
+        return queue
 
     def _getitem(self, idx, rot_angle=None, scale_ratio=None, flip=None, flip_direction=None, aug_configs=None):
         if self.test_mode:
             data = self.prepare_test_data(idx)
             return data
         # print(idx)
-        data = self.prepare_train_data(idx, rot_angle=rot_angle,
-                                    scale_ratio=scale_ratio,
-                                    flip=flip,
-                                    flip_direction=flip_direction,
-                                    aug_configs=aug_configs)
+        # data = self.prepare_train_data(idx, rot_angle=rot_angle,
+        #                             scale_ratio=scale_ratio,
+        #                             flip=flip,
+        #                             flip_direction=flip_direction,
+        #                             aug_configs=aug_configs)
         
-        # data = self.prepare_train_data(idx)
+        data = self.prepare_train_data(idx)
 
         if data is None:
             # print("data is none")
@@ -413,7 +508,8 @@ class PlusVADKittiDataset(KittiDataset):
             assert gt_bboxes_3d.shape[0] == velocity.shape[0]
             gt_bboxes_3d = np.concatenate((gt_bboxes_3d, velocity[:, :2]), axis=1)
             # anns_results.update({'gt_bboxes_velocity': velocity})
-
+        else:
+            gt_bboxes_3d = np.concatenate((gt_bboxes_3d, np.zeros((gt_bboxes_3d.shape[0], 2))), axis=1)
 
         anns_results = dict(
             gt_bboxes_3d=gt_bboxes_3d,
@@ -545,6 +641,8 @@ class PlusVADKittiDataset(KittiDataset):
         """
         info = self.data_infos[index]
         input_dict = self.parse_data_info(info)
+        input_dict['can_bus'] = info['can_bus']
+        input_dict['ego_lcf_feat'] = info['ego_lcf_feat']
         if not self.test_mode:
             annos = self.get_ann_info(index)
             input_dict['ann_info'] = annos
